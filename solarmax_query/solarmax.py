@@ -153,7 +153,7 @@ class SolarMax:
             20040: "SolarMax 6000S",
         }
         data = self.type()
-        if data == None:
+        if data is None:
             return None
         return inverter_types[data]
 
@@ -170,7 +170,7 @@ class SolarMax:
             20008: "Netzbetrieb",
         }
         data = self.query("SYS")
-        if data == None:
+        if data is None:
             return None
         return status_codes[data]
 
@@ -196,13 +196,13 @@ class SolarMax:
             65536: "Alarm 17",
         }
         data = self.query("SAL")
-        if data == None:
+        if data is None:
             return None
         return alarm_codes[data]
 
     def acOutput(self) -> float:
         data = self.query("PAC")
-        if data == None:
+        if data is None:
             return None
         return round(data * 0.5, 1)
 
@@ -226,7 +226,7 @@ class SolarMax:
 
     def energyDay(self) -> float:
         data = self.query("KDY")
-        if data == None:
+        if data is None:
             return None
         return round(data * 0.1, 1)
 
@@ -235,7 +235,7 @@ class SolarMax:
 
     def installedCapacity(self) -> float:
         data = self.query("PIN")
-        if data == None:
+        if data is None:
             return None
         return round(data * 0.5, 1)
 
@@ -253,25 +253,25 @@ class SolarMax:
 
     def voltageDC(self) -> float:
         data = self.query("UDC")
-        if data == None:
+        if data is None:
             return None
         return round(data * 0.1, 1)
 
     def voltagePhaseOne(self) -> float:
         data = self.query("UL1")
-        if data == None:
+        if data is None:
             return None
         return round(data * 0.1, 1)
 
     def currentDC(self) -> float:
         data = self.query("IDC")
-        if data == None:
+        if data is None:
             return None
         return round(data * 0.01, 2)
 
     def currentPhaseOne(self) -> float:
         data = self.query("IL1")
-        if data == None:
+        if data is None:
             return None
         return round(data * 0.01, 2)
 

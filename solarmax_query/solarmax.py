@@ -2,7 +2,7 @@ import socket, subprocess, os, time
 
 
 class SolarMax:
-    def __init__(self, host: str, port: int, inverterIndex: int) -> None:
+    def __init__(self, host: str, port: int = 12345, inverterIndex: int = 1) -> None:
         self.socket = socket.socket(
             socket.AF_INET, socket.SOCK_STREAM
         )  # type: socket.socket

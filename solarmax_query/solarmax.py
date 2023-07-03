@@ -59,10 +59,10 @@ class SolarMax:
     def create_query_string(self, code: str) -> str:
         # For the structure see 1.1
 
-        # FB is hex for 251 wich is the reserved aress for an outsite host wich we are see 1.3
+        # FB is hex for 251 which is the reserved address for an outside host which we are see 1.3
         src_address = "FB"
 
-        # inverterIndex is the index of the inverter we want to query wich is converted to hex wich has to be 2 characters long see 1.1
+        # inverter_index is the index of the inverter we want to query which is converted to hex wich has to be 2 characters long see 1.1
         dest_address = f"{self.index:02X}"
 
         # this the "port" in hex wich for data query is always 100 see 1.4
@@ -81,7 +81,7 @@ class SolarMax:
     def parse_data(self, data: str) -> int:
         # data is the data from the inverter
         # for example "{01;FB;18|64:ADR=1|04A9}"
-        # we are only interested in the data part
+        # we are only interested in the data part,
         # so we remove the header and the checksum
         # and convert the data to an int
         ndata = data.split("|")[1]
@@ -98,7 +98,7 @@ class SolarMax:
         try:
             # send query
             self.socket.sendall(query_string.encode())
-            # recive query
+            # receive reply
             data = ""
             while len(data) < 1:
                 data = self.socket.recv(255).decode()

@@ -1,4 +1,7 @@
-import socket, subprocess, os, time
+import socket
+import subprocess
+import os
+import time
 
 
 class SolarMax:

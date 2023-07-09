@@ -26,6 +26,7 @@ class SolarMaxQueryKey(StrEnum):
     TYPE = "TYP"
     TIME_HOURS = "THR"
     TIME_MINUTES = "TMI"
+    MAINS_FREQUENCY = "TNF"
 
 
 INVERTER_TYPES = {

@@ -171,6 +171,9 @@ class SolarMax:
             # Percent, Temperature_positive
             return int(value, 16)
 
+        if key in [SolarMaxQueryKey.MAINS_FREQUENCY]:
+            return round(int(value, 16) * 0.01, 2)
+
         # unknown type, return the raw value.
         return value
 
@@ -292,6 +295,9 @@ class SolarMax:
 
     def mains_cycle_duration(self) -> int:
         return self.query_single(SolarMaxQueryKey.MAINS_CYCLE_DURATION)
+
+    def mains_frequency(self) -> float:
+        return self.query_single(SolarMaxQueryKey.MAINS_FREQUENCY)
 
     def network_address(self) -> int:
         return self.query_single(SolarMaxQueryKey.NETWORK_ADDRESS)

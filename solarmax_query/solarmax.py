@@ -3,6 +3,8 @@ import subprocess
 import os
 import time
 
+from .constants import SolarMaxQueryKey
+
 
 class SolarMax:
     def __init__(self, host: str, port: int = 12345, inverter_index: int = 1) -> None:
@@ -59,21 +61,28 @@ class SolarMax:
             crc = "0" + crc
         return crc
 
-    def create_query_string(self, code: str) -> str:
+    def create_query_string(
+        self, key: str | SolarMaxQueryKey | list[str] | list[SolarMaxQueryKey]
+    ) -> str:
         # For the structure see 1.1
 
-        # FB is hex for 251 which is the reserved address for an outside host which we are see 1.3
+        if isinstance(key, list):
+            key = ";".join(key)
+
+        # FB is hex for 251 which is the reserved address for an outside host
+        # which we are, see 1.3
         src_address = "FB"
 
-        # inverter_index is the index of the inverter we want to query which is converted to hex wich has to be 2 characters long see 1.1
+        # inverter_index is the index of the inverter we want to query which is
+        # converted to hex wich has to be 2 characters long see 1.1.
         dest_address = f"{self.index:02X}"
 
-        # this the "port" in hex wich for data query is always 100 see 1.4
+        # this the "port" in hex which for data query is always 100 see 1.4
         query_type = "64"
 
-        length = 1 + 3 + 3 + 3 + 3 + len(code) + 1 + 4 + 1
+        length = 1 + 3 + 3 + 3 + 3 + len(key) + 1 + 4 + 1
         length = f"{length:02X}"
-        pre_crc_string = f"{src_address};{dest_address};{length}|{query_type}:{code}|"
+        pre_crc_string = f"{src_address};{dest_address};{length}|{query_type}:{key}|"
 
         # this is the checksum of the query see 1.1
         crc = self.checksum(pre_crc_string)

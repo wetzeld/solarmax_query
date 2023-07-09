@@ -3,7 +3,7 @@ import subprocess
 import os
 import time
 
-from .constants import SolarMaxQueryKey
+from .constants import SolarMaxQueryKey, INVERTER_TYPES, STATUS_CODES, ALARM_CODES
 
 
 class SolarMax:
@@ -90,7 +90,7 @@ class SolarMax:
 
         return query_string
 
-    def parse_data(self, data: str) -> int:
+    def parse_data(self, data: str) -> dict | int | float | str:
         # data is the data from the inverter
         # for example "{01;FB;18|64:ADR=1|04A9}"
         # we are only interested in the data part,
@@ -99,12 +99,108 @@ class SolarMax:
         ndata = data.split("|")[1]
         if ndata == "":
             return None
-        ndata = ndata.split("=")[1]
-        if "," in ndata:
-            ndata = ndata.split(",")[0]
-        return int(ndata, 16)
+        port, ndata, *_ = ndata.split(":")
+        if port != "64":
+            return None
+        elements = ndata.split(";")
 
-    def query(self, code: str) -> int:
+        result = {}
+        for element in elements:
+            key, value = element.split("=")
+            result[key] = self.parse_value(key, value)
+        return result
+
+    @staticmethod
+    def parse_value(key: str | SolarMaxQueryKey, value: str) -> dict | int | float:
+        if key == SolarMaxQueryKey.STATUS:
+            return SolarMax.parse_status_code(value)
+
+        if key == SolarMaxQueryKey.ALARM_CODE:
+            return SolarMax.parse_alarm_code(value)
+
+        if key == SolarMaxQueryKey.TYPE:
+            return SolarMax.parse_type(value)
+
+        if key in [SolarMaxQueryKey.CURRENT_DC, SolarMaxQueryKey.CURRENT_PHASE_ONE]:
+            # Current Positive 2
+            return round(int(value, 16) * 0.01, 2)
+
+        if key in [SolarMaxQueryKey.AC_OUTPUT, SolarMaxQueryKey.INSTALLED_CAPACITY]:
+            # Power
+            return round(int(value, 16) * 0.5, 1)
+
+        if key in [SolarMaxQueryKey.ENERGY_DAY]:
+            # Energy 1
+            return round(int(value, 16) * 0.1, 1)
+
+        if key in [
+            SolarMaxQueryKey.ENERGY_YEAR,
+            SolarMaxQueryKey.ENERGY_MONTH,
+            SolarMaxQueryKey.ENERGY_TOTAL,
+        ]:
+            # Energy 2
+            return int(value, 16)
+
+        if key in [SolarMaxQueryKey.VOLTAGE_DC, SolarMaxQueryKey.VOLTAGE_PHASE_ONE]:
+            # Voltage 2
+            return round(int(value, 16) * 0.1, 1)
+
+        if key in [
+            SolarMaxQueryKey.OPERATING_HOURS,
+            SolarMaxQueryKey.SOFTWARE_VERSION,
+            SolarMaxQueryKey.NETWORK_ADDRESS,
+        ]:
+            # Without Unit 1 and 2, Network Address
+            return int(value, 16)
+
+        if key in [
+            SolarMaxQueryKey.DATE_DAY,
+            SolarMaxQueryKey.DATE_MONTH,
+            SolarMaxQueryKey.DATE_YEAR,
+            SolarMaxQueryKey.TIME_HOURS,
+            SolarMaxQueryKey.TIME_MINUTES,
+            SolarMaxQueryKey.MAINS_CYCLE_DURATION,
+        ]:
+            # Various date / time fields
+            return int(value, 16)
+
+        if key in [
+            SolarMaxQueryKey.RELATIVE_OUTPUT,
+            SolarMaxQueryKey.TEMPERATURE_POWER_UNIT_ONE,
+        ]:
+            # Percent, Temperature_positive
+            return int(value, 16)
+
+        # unknown type, return the raw value.
+        return value
+
+    @staticmethod
+    def parse_status_code(code: str) -> dict:
+        # Example status code: "4E28,0"
+        # It is unclear what the ',0' is used for, so for now we discard it
+        code = code.split(",")[0]
+
+        code = int(code, 16)
+        status = STATUS_CODES.get(code, f"Unknown status '{code}'")
+        return {"raw": code, "status": status}
+
+    @staticmethod
+    def parse_alarm_code(code: str) -> dict:
+        code = int(code, 16)
+        # TODO: in case alarm codes are a bitmask, we would need to handle
+        #  multiple active alarms at once.
+        alarm = ALARM_CODES.get(code, f"Unknown alarm code '{code}'")
+        return {"raw": code, "alarm": alarm}
+
+    @staticmethod
+    def parse_type(code: str) -> dict:
+        code = int(code, 16)
+        model = INVERTER_TYPES.get(code, f"Unknown model '{code}'")
+        return {"raw": code, "model": model}
+
+    def query(
+        self, code: str | SolarMaxQueryKey | list[str] | list[SolarMaxQueryKey]
+    ) -> dict | int | float:
         query_string = self.create_query_string(code)
 
         try:
@@ -125,6 +221,9 @@ class SolarMax:
 
         # parse data
         return self.parse_data(data)
+
+    def query_single(self, key: str | SolarMaxQueryKey) -> dict | int | float:
+        return self.query(key).get(key)
 
     def get_unit(self, function: object) -> str:
         units = {
@@ -153,143 +252,76 @@ class SolarMax:
         return units[function]
 
     def model(self) -> str:
-        inverter_types = {
-            20010: "SolarMax 2000S",
-            20020: "SolarMax 3000S",
-            20030: "SolarMax 4200S",
-            20040: "SolarMax 6000S",
-        }
-        data = self.type()
-        if data is None:
-            return None
-        return inverter_types[data]
+        return self.query_single(SolarMaxQueryKey.TYPE).get("model")
 
     def status(self) -> str:
-        status_codes = {
-            20000: "Keine Kommunikation",
-            20001: "In Betrieb",
-            20002: "Zu wenig Einstrahlung",
-            20003: "Anfahren",
-            20004: "Betrieb auf MPP",
-            20005: "Ventilator läuft",
-            20006: "Betrieb auf Maximalleistung",
-            20007: "Temperaturbegrenzung",
-            20008: "Netzbetrieb",
-        }
-        data = self.query("SYS")
-        if data is None:
-            return None
-        return status_codes[data]
+        return self.query_single(SolarMaxQueryKey.STATUS).get("status")
 
     def alarm_code(self) -> str:
-        alarm_codes = {
-            0: "kein Fehler",
-            1: "Externer Fehler 1",
-            2: "Isolationsfehler DC-Seite",
-            4: "Fehlerstrom Erde zu Groß",
-            8: "Sicherungsbruch Mittelpunkterde",
-            16: "Externer Alarm 2",
-            32: "Langzeit-Temperaturbegrenzung",
-            64: "Fehler AC-Einspeisung",
-            128: "Externer Alarm 4",
-            256: "Ventilator defekt",
-            512: "Sicherungsbruch",
-            1024: "Ausfall Temperatursensor",
-            2048: "Alarm 12",
-            4096: "Alarm 13",
-            8192: "Alarm 14",
-            16384: "Alarm 15",
-            32768: "Alarm 16",
-            65536: "Alarm 17",
-        }
-        data = self.query("SAL")
-        if data is None:
-            return None
-        return alarm_codes[data]
+        return self.query_single(SolarMaxQueryKey.ALARM_CODE).get("alarm")
 
     def ac_output(self) -> float:
-        data = self.query("PAC")
-        if data is None:
-            return None
-        return round(data * 0.5, 1)
+        return self.query_single(SolarMaxQueryKey.AC_OUTPUT)
 
     def operating_hours(self) -> int:
-        return self.query("KHR")
+        return self.query_single(SolarMaxQueryKey.OPERATING_HOURS)
 
     def date_year(self) -> int:
-        return self.query("DYR")
+        return self.query_single(SolarMaxQueryKey.DATE_YEAR)
 
     def date_month(self) -> int:
-        return self.query("DMT")
+        return self.query_single(SolarMaxQueryKey.DATE_MONTH)
 
     def date_day(self) -> int:
-        return self.query("DDY")
+        return self.query_single(SolarMaxQueryKey.DATE_DAY)
 
     def energy_year(self) -> int:
-        return self.query("KYR")
+        return self.query_single(SolarMaxQueryKey.ENERGY_YEAR)
 
     def energy_month(self) -> int:
-        return self.query("KMT")
+        return self.query_single(SolarMaxQueryKey.ENERGY_MONTH)
 
     def energy_day(self) -> float:
-        data = self.query("KDY")
-        if data is None:
-            return None
-        return round(data * 0.1, 1)
+        return self.query_single(SolarMaxQueryKey.ENERGY_DAY)
 
     def energy_total(self) -> int:
-        return self.query("KT0")
+        return self.query_single(SolarMaxQueryKey.ENERGY_TOTAL)
 
     def installed_capacity(self) -> float:
-        data = self.query("PIN")
-        if data is None:
-            return None
-        return round(data * 0.5, 1)
+        return self.query_single(SolarMaxQueryKey.INSTALLED_CAPACITY)
 
     def mains_cycle_duration(self) -> int:
-        return self.query("TNP")
+        return self.query_single(SolarMaxQueryKey.MAINS_CYCLE_DURATION)
 
     def network_address(self) -> int:
-        return self.query("ADR")
+        return self.query_single(SolarMaxQueryKey.NETWORK_ADDRESS)
 
     def relative_output(self) -> int:
-        return self.query("PRL")
+        return self.query_single(SolarMaxQueryKey.RELATIVE_OUTPUT)
 
     def software_version(self) -> int:
-        return self.query("SWV")
+        return self.query_single(SolarMaxQueryKey.SOFTWARE_VERSION)
 
     def voltage_dc(self) -> float:
-        data = self.query("UDC")
-        if data is None:
-            return None
-        return round(data * 0.1, 1)
+        return self.query_single(SolarMaxQueryKey.VOLTAGE_DC)
 
     def voltage_phase_one(self) -> float:
-        data = self.query("UL1")
-        if data is None:
-            return None
-        return round(data * 0.1, 1)
+        return self.query_single(SolarMaxQueryKey.VOLTAGE_PHASE_ONE)
 
     def current_dc(self) -> float:
-        data = self.query("IDC")
-        if data is None:
-            return None
-        return round(data * 0.01, 2)
+        return self.query_single(SolarMaxQueryKey.CURRENT_DC)
 
     def current_phase_one(self) -> float:
-        data = self.query("IL1")
-        if data is None:
-            return None
-        return round(data * 0.01, 2)
+        return self.query_single(SolarMaxQueryKey.CURRENT_PHASE_ONE)
 
     def temperature_power_unit_one(self) -> int:
-        return self.query("TKK")
+        return self.query_single(SolarMaxQueryKey.TEMPERATURE_POWER_UNIT_ONE)
 
     def type(self) -> int:
-        return self.query("TYP")
+        return self.query_single(SolarMaxQueryKey.TYPE).get("raw")
 
     def time_minutes(self) -> int:
-        return self.query("TMI")
+        return self.query_single(SolarMaxQueryKey.TIME_MINUTES)
 
     def time_hours(self) -> int:
-        return self.query("THR")
+        return self.query_single(SolarMaxQueryKey.TIME_HOURS)

@@ -1,9 +1,13 @@
+import logging
 import socket
 import subprocess
 import os
 import time
 
 from .constants import SolarMaxQueryKey, INVERTER_TYPES, STATUS_CODES, ALARM_CODES
+
+
+LOGGER = logging.getLogger("SolarMax")
 
 
 class SolarMax:
@@ -34,6 +38,7 @@ class SolarMax:
                 stderr=subprocess.PIPE,
             )
         out.wait()
+        LOGGER.debug("Pinging inverter '%s': %i", self.host, out.returncode)
         return out.returncode == 0
 
     def reconnect(self) -> None:
@@ -46,10 +51,12 @@ class SolarMax:
         if not self.ping_inverter():
             raise Exception("Inverter not reachable")
         try:
+            LOGGER.info("Connecting to inverter '%s:%i'...", self.host, self.port)
             self.socket.connect((self.host, self.port))
-        except:
+        except OSError as e:
             self.socket.close()
             self.socket = None
+            LOGGER.error("Failed to connect to inverter: %s", str(e))
             raise Exception(f"Could not connect to host: {self.host}:{self.port}")
 
     def checksum(self, text: str) -> str:
@@ -208,11 +215,13 @@ class SolarMax:
 
         try:
             # send query
+            LOGGER.debug("Request: %s", query_string)
             self.socket.sendall(query_string.encode())
             # receive reply
             data = ""
             while len(data) < 1:
                 data = self.socket.recv(255).decode()
+            LOGGER.debug("Reply: %s", data)
         except:
             return None
 

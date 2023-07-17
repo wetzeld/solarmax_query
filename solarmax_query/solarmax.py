@@ -53,9 +53,7 @@ class SolarMax:
     def connect(self) -> None:
         try:
             LOGGER.info("Connecting to inverter '%s:%i'...", self.host, self.port)
-            self.socket = socket.socket(
-                socket.AF_INET, socket.SOCK_STREAM
-            )
+            self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.socket.connect((self.host, self.port))
             self.socket.settimeout(2.0)
         except OSError as e:
@@ -66,7 +64,9 @@ class SolarMax:
 
     def disconnect(self) -> None:
         if self.socket is not None:
-            LOGGER.info("Closing connection to inverter '%s:%i'...", self.host, self.port)
+            LOGGER.info(
+                "Closing connection to inverter '%s:%i'...", self.host, self.port
+            )
             self.socket.close()
             self.socket = None
 

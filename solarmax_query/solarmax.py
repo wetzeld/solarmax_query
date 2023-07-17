@@ -11,18 +11,16 @@ LOGGER = logging.getLogger("SolarMax")
 
 
 class SolarMax:
+    socket: socket.socket | None
+
     def __init__(self, host: str, port: int = 12345, inverter_index: int = 1) -> None:
-        self.socket = socket.socket(
-            socket.AF_INET, socket.SOCK_STREAM
-        )  # type: socket.socket
+        self.socket = None
         self.index = inverter_index
         self.host = host
         self.port = port
-        self.connect()
 
     def __del__(self) -> None:
-        if self.socket is not None:
-            self.socket.close()
+        self.disconnect()
 
     def ping_inverter(self) -> bool:
         if os.name == "nt":
@@ -38,26 +36,39 @@ class SolarMax:
                 stderr=subprocess.PIPE,
             )
         out.wait()
-        LOGGER.debug("Pinging inverter '%s': %i", self.host, out.returncode)
+        LOGGER.debug("Pinging inverter '%s'. Result: %i", self.host, out.returncode)
         return out.returncode == 0
 
+    @property
+    def connected(self) -> bool:
+        return self.socket is not None
+
     def reconnect(self) -> None:
-        self.__del__()
+        self.disconnect()
+        LOGGER.info("Waiting for the inverter to be reachable...")
         while not self.ping_inverter():
             time.sleep(60)
         self.connect()
 
     def connect(self) -> None:
-        if not self.ping_inverter():
-            raise Exception("Inverter not reachable")
         try:
             LOGGER.info("Connecting to inverter '%s:%i'...", self.host, self.port)
+            self.socket = socket.socket(
+                socket.AF_INET, socket.SOCK_STREAM
+            )
             self.socket.connect((self.host, self.port))
+            self.socket.settimeout(2.0)
         except OSError as e:
             self.socket.close()
             self.socket = None
             LOGGER.error("Failed to connect to inverter: %s", str(e))
             raise Exception(f"Could not connect to host: {self.host}:{self.port}")
+
+    def disconnect(self) -> None:
+        if self.socket is not None:
+            LOGGER.info("Closing connection to inverter '%s:%i'...", self.host, self.port)
+            self.socket.close()
+            self.socket = None
 
     def checksum(self, text: str) -> str:
         total = 0
@@ -105,10 +116,10 @@ class SolarMax:
         # and convert the data to an int
         ndata = data.split("|")[1]
         if ndata == "":
-            return None
+            raise Exception("Unexpected reply format!")
         port, ndata, *_ = ndata.split(":")
         if port != "64":
-            return None
+            raise Exception(f"Unexpected port number 0x{port} in reply!")
         elements = ndata.split(";")
 
         result = {}
@@ -214,6 +225,8 @@ class SolarMax:
         query_string = self.create_query_string(code)
 
         try:
+            if self.socket is None:
+                self.connect()
             # send query
             LOGGER.debug("Request: %s", query_string)
             self.socket.sendall(query_string.encode())
@@ -222,14 +235,17 @@ class SolarMax:
             while len(data) < 1:
                 data = self.socket.recv(255).decode()
             LOGGER.debug("Reply: %s", data)
-        except:
-            return None
+        except Exception as e:
+            LOGGER.error("Error while querying inverter: %s", str(e))
+            self.socket.close()
+            self.socket = None
+            raise
 
         # check crc
         in_crc = data[-5:-1]
         check_crc = self.checksum(data[1:-5])
         if in_crc != check_crc:
-            return None
+            raise Exception("CRC mismatch in received data!")
 
         # parse data
         return self.parse_data(data)
